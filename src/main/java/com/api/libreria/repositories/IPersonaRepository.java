@@ -10,4 +10,6 @@ import com.api.libreria.models.PersonaModel;
 @Repository 
 public interface IPersonaRepository extends JpaRepository<PersonaModel, Long> {
     ArrayList<PersonaModel> findByNombre(String nombre);
+    boolean existsByCorreo(String correo);
+    boolean existsByCorreoAndIdNot(String correo, Long id);
 }

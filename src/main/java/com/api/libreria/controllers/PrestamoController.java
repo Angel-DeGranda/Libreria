@@ -1,9 +1,10 @@
 package com.api.libreria.controllers;
 
-import java.util.ArrayList;
-import java.util.Optional;
+import java.net.URI;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,9 +13,12 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.api.libreria.models.PrestamoModel;
 import com.api.libreria.services.PrestamoService;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/prestamos")
@@ -22,38 +26,42 @@ public class PrestamoController {
 
     @Autowired
     private PrestamoService prestamoService;
-
+ 
     @GetMapping
-    public ArrayList<PrestamoModel> obtenerPrestamos(){
-        return this.prestamoService.obtenerPrestamos();
+    public ResponseEntity<List<PrestamoModel>> obtenerPrestamos(){
+        return ResponseEntity.ok(prestamoService.obtenerPrestamos());
     }
-
+ 
     @PostMapping
-    public PrestamoModel guardarPrestamo(@RequestBody PrestamoModel prestamo){
-        return this.prestamoService.guardarPrestamo(prestamo);
+    public ResponseEntity<PrestamoModel> guardarPrestamo(@Valid @RequestBody PrestamoModel prestamo){
+        PrestamoModel guardado = prestamoService.guardarPrestamo(prestamo);
+        URI ubicacion = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(guardado.getId())
+                .toUri();
+        return ResponseEntity.created(ubicacion).body(guardado);
     }
-
+ 
     @GetMapping(path = "/{id}")
-    public Optional<PrestamoModel> obtenerPorId(@PathVariable("id") Long id){
-        return this.prestamoService.obtenerPorId(id);
+    public ResponseEntity<PrestamoModel> obtenerPorId(@PathVariable("id") Long id){
+        return prestamoService.obtenerPorId(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
-
+ 
     @PutMapping(path = "/{id}")
-    public PrestamoModel actualizarPrestamo(@RequestBody PrestamoModel prestamo, @PathVariable("id") Long id){
-        return this.prestamoService.actualizarPrestamo(prestamo, id);
+    public ResponseEntity<PrestamoModel> actualizarPrestamo(@Valid @RequestBody PrestamoModel prestamo, @PathVariable("id") Long id){
+        return ResponseEntity.ok(prestamoService.actualizarPrestamo(prestamo, id));
     }
-
+ 
     @PutMapping(path = "/{id}/devolver")
-    public PrestamoModel devolverPrestamo(@PathVariable("id") Long id){
-        return this.prestamoService.marcarDevolucion(id);
+    public ResponseEntity<PrestamoModel> devolverPrestamo(@PathVariable("id") Long id){
+        return ResponseEntity.ok(prestamoService.marcarDevolucion(id));
     }
-
+ 
     @DeleteMapping(path = "/{id}")
-    public String eliminarPorId(@PathVariable("id") Long id){
-        boolean ok = this.prestamoService.eliminarPrestamo(id);
-        if(ok){
-            return "Se eliminó el préstamo con id: " + id;
-        }
-        return "No se encontró un préstamo con id: " + id;
+    public ResponseEntity<Void> eliminarPorId(@PathVariable("id") Long id){
+        prestamoService.eliminarPrestamo(id);
+        return ResponseEntity.noContent().build();
     }
 }

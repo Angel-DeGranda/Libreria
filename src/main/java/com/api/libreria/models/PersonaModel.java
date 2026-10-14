@@ -3,12 +3,20 @@ package com.api.libreria.models;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Past;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 @Entity 
 @Table (name="personas")
@@ -18,35 +26,55 @@ public class PersonaModel {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
  
-    @Column
+    @NotBlank(message = "El nombre es obligatorio")
+    @Column(nullable = false)
     private String nombre;
  
-    @Column
+    @NotBlank(message = "Los apellidos son obligatorios")
+    @Column(nullable = false)
     private String apellidos;
  
-    @Column
+    @NotBlank(message = "El correo es obligatorio")
+    @Email(message = "El correo no tiene un formato válido")
+    @Column(nullable = false, unique = true)
     private String correo;
  
+    // WRITE_ONLY: se puede recibir en el JSON, pero nunca se devuelve en las respuestas.
+    // Que la contraseña sea obligatoria al crear se valida en PersonaService,
+    // porque al actualizar una persona no se envía.
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @Column
     private String contrasena;
  
-    @Column
+    @NotBlank(message = "El rol es obligatorio")
+    @Pattern(regexp = "ADMIN|USUARIO", message = "El rol debe ser ADMIN o USUARIO")
+    @Column(nullable = false)
     private String rol;
  
-    @Column
+    @NotBlank(message = "El estado es obligatorio")
+    @Pattern(regexp = "ACTIVO|INACTIVO", message = "El estado debe ser ACTIVO o INACTIVO")
+    @Column(nullable = false)
     private String estado;
  
-    @Column
+    @Column(nullable = false, updatable = false)
     private LocalDateTime fechaCreacion;
  
+    @Past(message = "La fecha de nacimiento debe ser una fecha pasada")
     @Column
     private LocalDate fechaNacimiento;
  
+    @Pattern(regexp = "^(\\d{10})?$", message = "El teléfono debe tener 10 dígitos")
     @Column
     private String telefono;
  
+    @Size(max = 200, message = "La dirección no puede pasar de 200 caracteres")
     @Column
     private String direccion;
+ 
+    @PrePersist
+    private void asignarFechaCreacion() {
+        fechaCreacion = LocalDateTime.now();
+    }
 
     public Long getId() {
         return id;
@@ -136,5 +164,6 @@ public class PersonaModel {
         this.direccion = direccion;
     }
 
+    
     
 }

@@ -1,7 +1,8 @@
 package com.api.libreria.services;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,105 +15,147 @@ import com.api.libreria.repositories.ILibroRepository;
 import com.api.libreria.repositories.IPersonaRepository;
 import com.api.libreria.repositories.IPrestamoRepository;
 
+import jakarta.transaction.Transactional;
+
 @Service
 public class PrestamoService {
 
     @Autowired
-    IPrestamoRepository prestamoRepository;
+    private IPrestamoRepository prestamoRepository;
 
     @Autowired
-    ILibroRepository libroRepository;
+    private ILibroRepository libroRepository;
 
     @Autowired
-    IPersonaRepository personaRepository;
+    private IPersonaRepository personaRepository;
 
-    public ArrayList<PrestamoModel> obtenerPrestamos(){
-        return (ArrayList<PrestamoModel>) prestamoRepository.findAll();
+    public List<PrestamoModel> obtenerPrestamos() {
+        return prestamoRepository.findAll();
     }
 
-    public PrestamoModel guardarPrestamo(PrestamoModel prestamo){
-        Long socioId = prestamo.getSocio().getId();
-        Long libroIsbn = prestamo.getLibro().getIsbn();
+    @Transactional
+    public PrestamoModel guardarPrestamo(PrestamoModel prestamo) {
+        validarReferencias(prestamo);
 
-        PersonaModel socio = personaRepository.findById(socioId)
-                .orElseThrow(() -> new IllegalArgumentException("No existe una persona con id: " + socioId));
-        
-        if ("ADMIN".equals(socio.getRol())) {
-            throw new IllegalStateException("No se le puede prestar a un administrador");
-        }
-        if (!"ACTIVO".equals(socio.getEstado())) {
-            throw new IllegalStateException("No se le puede prestar a un socio inactivo.");
-        }
+        PersonaModel socio = buscarSocioPrestable(prestamo.getSocio().getId());
+        LibroModel libro = buscarLibro(prestamo.getLibro().getIsbn());
+        validarNoDuplicado(socio.getId(), libro.getIsbn());
+        descontarEjemplar(libro);
 
-        boolean yaLoTienePrestado = prestamoRepository.existsBySocioIdAndLibroIsbnAndFechaDevolucionIsNull(socioId, libroIsbn);
-        if (yaLoTienePrestado) {
-            throw new IllegalStateException("Este socio ya tiene este libro prestado y no lo ha devuelto.");
-        }
-
-        LibroModel libro = libroRepository.findById(libroIsbn)
-                .orElseThrow(() -> new IllegalArgumentException("No existe un libro con ISBN: " + libroIsbn));
-
-        if (libro.getNumEjemplares() <= 0) {
-            throw new IllegalStateException("No hay ejemplares disponibles de este libro.");
-        }
-
-        libro.setNumEjemplares(libro.getNumEjemplares() - 1);
-        libroRepository.save(libro);
+        // Se usan las entidades completas de la BD (no las que mandó el cliente) y se
+        // ignora cualquier id recibido
+        prestamo.setId(null);
+        prestamo.setSocio(socio);
         prestamo.setLibro(libro);
         return prestamoRepository.save(prestamo);
     }
 
-    
-
-    public Optional<PrestamoModel> obtenerPorId(Long id){
+    public Optional<PrestamoModel> obtenerPorId(Long id) {
         return prestamoRepository.findById(id);
     }
 
-    public PrestamoModel actualizarPrestamo(PrestamoModel request, Long id){
-        PrestamoModel prestamo = prestamoRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("No existe un préstamo con id: " + id));
-        prestamo.setLibro(request.getLibro());
-        prestamo.setSocio(request.getSocio());
-        prestamo.setFechaDevolucion(request.getFechaDevolucion());
+    @Transactional
+    public PrestamoModel actualizarPrestamo(PrestamoModel request, Long id) {
+        PrestamoModel prestamo = buscarPrestamo(id);
+        if (prestamo.getFechaDevolucion() != null) {
+            throw new IllegalStateException("No se puede modificar un préstamo que ya fue devuelto.");
+        }
+        validarReferencias(request);
 
+        Long nuevoSocioId = request.getSocio().getId();
+        Long nuevoIsbn = request.getLibro().getIsbn();
+        boolean cambiaSocio = !prestamo.getSocio().getId().equals(nuevoSocioId);
+        boolean cambiaLibro = !prestamo.getLibro().getIsbn().equals(nuevoIsbn);
+        if (!cambiaSocio && !cambiaLibro) {
+            return prestamo;
+        }
+
+        PersonaModel socio = cambiaSocio ? buscarSocioPrestable(nuevoSocioId) : prestamo.getSocio();
+        LibroModel libro = cambiaLibro ? buscarLibro(nuevoIsbn) : prestamo.getLibro();
+        validarNoDuplicado(socio.getId(), libro.getIsbn());
+
+        if (cambiaLibro) {
+            descontarEjemplar(libro);
+            devolverEjemplar(prestamo.getLibro());
+        }
+
+        prestamo.setSocio(socio);
+        prestamo.setLibro(libro);
         return prestamoRepository.save(prestamo);
     }
 
-    public PrestamoModel marcarDevolucion(Long id){
-        PrestamoModel prestamo = prestamoRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("No existe un préstamo con id: " + id));
-
+    @Transactional
+    public PrestamoModel marcarDevolucion(Long id) {
+        PrestamoModel prestamo = buscarPrestamo(id);
         if (prestamo.getFechaDevolucion() != null) {
             throw new IllegalStateException("Este préstamo ya fue devuelto.");
         }
 
         prestamo.setFechaDevolucion(LocalDateTime.now());
-
-        LibroModel libro = prestamo.getLibro();
-        libro.setNumEjemplares(libro.getNumEjemplares() + 1);
-        libroRepository.save(libro);
-
+        devolverEjemplar(prestamo.getLibro());
         return prestamoRepository.save(prestamo);
     }
 
-    public boolean eliminarPrestamo(Long id){
-        try{
-            PrestamoModel prestamo = prestamoRepository.findById(id).orElse(null);
-            if (prestamo == null) {
-                return false;
-            }
+    @Transactional
+    public void eliminarPrestamo(Long id) {
+        PrestamoModel prestamo = buscarPrestamo(id);
 
-            if (prestamo.getFechaDevolucion() == null) {
-                LibroModel libro = prestamo.getLibro();
-                libro.setNumEjemplares(libro.getNumEjemplares() + 1);
-                libroRepository.save(libro);
-            }
-
-            prestamoRepository.deleteById(id);
-            return true;
-        } catch(Exception err){
-            return false;
+        // Si el préstamo seguía activo, el ejemplar vuelve al inventario
+        if (prestamo.getFechaDevolucion() == null) {
+            devolverEjemplar(prestamo.getLibro());
         }
+        prestamoRepository.delete(prestamo);
+    }
+
+    private PrestamoModel buscarPrestamo(Long id) {
+        return prestamoRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("No existe un préstamo con id: " + id));
+    }
+
+    private LibroModel buscarLibro(Long isbn) {
+        return libroRepository.findById(isbn)
+                .orElseThrow(() -> new NoSuchElementException("No existe un libro con ISBN: " + isbn));
+    }
+
+    private PersonaModel buscarSocioPrestable(Long socioId) {
+        PersonaModel socio = personaRepository.findById(socioId)
+                .orElseThrow(() -> new NoSuchElementException("No existe una persona con id: " + socioId));
+
+        if ("ADMIN".equals(socio.getRol())) {
+            throw new IllegalStateException("No se le puede prestar a un administrador.");
+        }
+        if (!"ACTIVO".equals(socio.getEstado())) {
+            throw new IllegalStateException("No se le puede prestar a un socio inactivo.");
+        }
+        return socio;
+    }
+
+    private void validarReferencias(PrestamoModel prestamo) {
+        if (prestamo.getSocio() == null || prestamo.getSocio().getId() == null) {
+            throw new IllegalArgumentException("Debe indicar el id del socio.");
+        }
+        if (prestamo.getLibro() == null || prestamo.getLibro().getIsbn() == null) {
+            throw new IllegalArgumentException("Debe indicar el ISBN del libro.");
+        }
+    }
+
+    private void validarNoDuplicado(Long socioId, Long isbn) {
+        if (prestamoRepository.existsBySocioIdAndLibroIsbnAndFechaDevolucionIsNull(socioId, isbn)) {
+            throw new IllegalStateException("Este socio ya tiene este libro prestado y no lo ha devuelto.");
+        }
+    }
+
+    private void descontarEjemplar(LibroModel libro) {
+        if (libro.getNumEjemplares() <= 0) {
+            throw new IllegalStateException("No hay ejemplares disponibles de este libro.");
+        }
+        libro.setNumEjemplares(libro.getNumEjemplares() - 1);
+        libroRepository.save(libro);
+    }
+
+    private void devolverEjemplar(LibroModel libro) {
+        libro.setNumEjemplares(libro.getNumEjemplares() + 1);
+        libroRepository.save(libro);
     }
 
 }

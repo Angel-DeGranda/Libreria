@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotNull;
 
 @Entity
 @Table(name = "prestamos")
@@ -21,10 +22,14 @@ public class PrestamoModel {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Al crear un préstamo basta con mandar el ISBN: { "libro": { "isbn": 1 } }.
+    @NotNull(message = "El libro es obligatorio")
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "libro_isbn", nullable = false)
     private LibroModel libro;
 
+    // Igual que el libro: basta con mandar el id: { "socio": { "id": 1 } }
+    @NotNull(message = "El socio es obligatorio")
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "socio_id", nullable = false)
     private PersonaModel socio;
@@ -36,10 +41,9 @@ public class PrestamoModel {
     private LocalDateTime fechaDevolucion;
 
     @PrePersist
-    private void asignarFechaPrestamo() {
-        if (fechaPrestamo == null) {
-            fechaPrestamo = LocalDateTime.now();
-        }
+    private void asignarFechas() {
+        fechaPrestamo = LocalDateTime.now();
+        fechaDevolucion = null;
     }
 
     public Long getId() {
@@ -81,4 +85,6 @@ public class PrestamoModel {
     public void setFechaDevolucion(LocalDateTime fechaDevolucion) {
         this.fechaDevolucion = fechaDevolucion;
     }
+
+
 }
