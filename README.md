@@ -325,7 +325,3 @@ Respuesta `200 OK`: el mismo préstamo, ahora con `fechaDevolucion` y el ejempla
 
 **Recurso inexistente** (`GET /personas/99`) → `404 Not Found` sin cuerpo.
 
-## Notas
-
-- La API no incluye autenticación: cualquiera que pueda acceder al servidor puede usar todos los endpoints. Las contraseñas solo se cifran al guardarse.
-- Con `ddl-auto=update`, Hibernate crea y ajusta las tablas al iniciar, pero no borra datos ni columnas existentes.
