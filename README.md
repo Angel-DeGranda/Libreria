@@ -57,8 +57,8 @@ src/main/resources
 1. **Clona el repositorio** y entra a la carpeta del proyecto:
 
    ```bash
-   git clone <url-del-repositorio>
-   cd <carpeta-del-proyecto>
+   git clone https://github.com/Angel-DeGranda/Libreria.git
+   cd Libreria
    ```
 
 2. **Crea la base de datos** en MySQL. Las tablas se crean solas al arrancar (`ddl-auto=update`), pero la base de datos debe existir:
